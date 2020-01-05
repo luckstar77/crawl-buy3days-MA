@@ -17,6 +17,7 @@ var params = {
       ],
       ToAddresses: [
         'luckstar77y@gmail.com',
+        'cheners123@gmail.com',
         /* more items */
       ]
     },
@@ -148,5 +149,6 @@ const worker = async (PickID, SubjectData) => {
 exports.handler = async function(event, context) {
   await worker('462', '3條均線糾結且外資連續買超3日');
   await worker('480', '3條均線糾結且投信連續買超3日');
+  await worker('462,480', '3條均線糾結且外資投信連續買超3日');
   return 'ok';
 }
