@@ -3,7 +3,15 @@ const cheerio = require('cheerio');
 const _ = require('lodash');
 
 const AWS = require('aws-sdk');
+
+AWS.config.update({
+  region: "ap-northeast-1",
+});
+
+var docClient = new AWS.DynamoDB.DocumentClient();
+
 AWS.config.update({region: 'us-west-2'});
+const ses = new AWS.SES({apiVersion: '2010-12-01'});
 
 const INTEREST_RATE_SPREAD = parseFloat(process.env.INTEREST_RATE_SPREAD) || 1.02;
 const CS1 = parseFloat(process.env.CS1) || 100;
@@ -105,7 +113,7 @@ const worker = async (PickID, SubjectData) => {
       parseDividends,
     }, null, 2);
     params.Message.Subject.Data = SubjectData + '_沒有匹配';
-    return await new AWS.SES({apiVersion: '2010-12-01'}).sendEmail(params).promise();
+    return await ses.sendEmail(params).promise();
   };
   parseDividends = notificationStocks;
 
@@ -132,18 +140,50 @@ const worker = async (PickID, SubjectData) => {
       }
       return accu;
   }, []);
+  
   if(_.isEmpty(notificationStocks)) {
     params.Message.Body.Text.Data = JSON.stringify({
       parseDividends,
       stocksAboveMA,
     }, null, 2);
     params.Message.Subject.Data = SubjectData + '_沒有匹配';
-    return await new AWS.SES({apiVersion: '2010-12-01'}).sendEmail(params).promise();
+    return await ses.sendEmail(params).promise();
   };
+
+  await new Promise((resolve, reject) => {
+    const now = new Date();
+    let types = [];
+    PickID.includes('462') && types.push('外資');
+    PickID.includes('480') && types.push('投信');
+    docClient.batchWrite({
+    RequestItems: {
+      'stocker': notificationStocks.map(notificationStock => ({
+        PutRequest: {
+          Item:{
+            ...notificationStock,
+            created: now.getTime(),
+            year: now.getFullYear(),
+            month: now.getMonth() + 1,
+            date: now.getDate(),
+            types,
+          }
+        }
+      })),
+    }
+  }, function(err, data) {
+        if (err) {
+            console.error("Unable to add item. Error JSON:", JSON.stringify(err, null, 2));
+            reject(err);
+        } else {
+            console.log("Added item:", JSON.stringify(data, null, 2));
+            resolve(data);
+        }
+    });
+  });
 
   params.Message.Body.Text.Data = JSON.stringify(notificationStocks, null, 2);
   params.Message.Subject.Data = SubjectData;
-  return await new AWS.SES({apiVersion: '2010-12-01'}).sendEmail(params).promise();
+  return await ses.sendEmail(params).promise();
 }
 
 exports.handler = async function(event, context) {
